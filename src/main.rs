@@ -64,6 +64,9 @@ async fn main() {
                 circle.y -= MOVEMENT_SPEED * delta_time;
             }
 
+            circle.x = clamp(circle.x, 0.0, screen_width());
+            circle.y = clamp(circle.y, 0.0, screen_height());
+
             if rand::gen_range(0, 99) >= 95 {
                 let size = rand::gen_range(16.0, 64.0);
                 let color = colors.choose().unwrap();
@@ -81,12 +84,16 @@ async fn main() {
             }
             squares.retain(|square| square.y < screen_height() + square.size);
 
-            circle.x = clamp(circle.x, 0.0, screen_width());
-            circle.y = clamp(circle.y, 0.0, screen_height());
-
             if squares.iter().any(|square| circle.collides_with(square)) {
                 game_over = true;
             }
+        }
+
+        if game_over && is_key_pressed(KeyCode::Space) {
+            squares.clear();
+            circle.x = screen_width() / 2.0;
+            circle.y = screen_height() / 2.0;
+            game_over = false;
         }
 
         for square in &squares {
@@ -99,6 +106,19 @@ async fn main() {
             );
         }
         draw_circle(circle.x, circle.y, circle.size / 2.0, circle.color);
+
+        if game_over {
+            let text = "GAME OVER!";
+            let text_dimensions = measure_text(text, None, 50, 1.0);
+            draw_text(
+                text,
+                screen_width() / 2.0 - text_dimensions.width / 2.0,
+                screen_height() / 2.0,
+                50.0,
+                RED,
+            );
+        }
+
         next_frame().await;
     }
 }
