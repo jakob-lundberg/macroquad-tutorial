@@ -1,4 +1,5 @@
 use macroquad::{prelude::*, rand::ChooseRandom};
+use std::fs;
 
 struct Shape {
     size: f32,
@@ -41,6 +42,11 @@ async fn main() {
     let mut game_over = false;
     let mut squares = vec![];
     let mut bullets: Vec<Shape> = vec![];
+    let mut last_fired: f64 = 0.0;
+    let mut score: u32 = 0;
+    let mut highscore: u32 = fs::read_to_string("highscore.dat")
+        .map_or(Ok(0), |i| i.parse::<u32>())
+        .unwrap_or(0);
 
     let mut circle = Shape {
         size: 32.0,
@@ -71,7 +77,7 @@ async fn main() {
             circle.x = clamp(circle.x, 0.0, screen_width());
             circle.y = clamp(circle.y, 0.0, screen_height());
 
-            if is_key_pressed(KeyCode::Space) {
+            if is_key_down(KeyCode::Space) && get_time() - last_fired > 1.0 {
                 bullets.push(Shape {
                     size: 5.0,
                     speed: circle.speed * 2.0,
@@ -80,6 +86,8 @@ async fn main() {
                     color: BLACK,
                     collided: false,
                 });
+
+                last_fired = get_time();
             }
 
             if rand::gen_range(0, 99) >= 95 {
@@ -110,6 +118,9 @@ async fn main() {
             bullets.retain(|bullet| !bullet.collided);
 
             if squares.iter().any(|square| circle.collides_with(square)) {
+                if score == highscore {
+                    fs::write("highscore.dat", highscore.to_string()).ok();
+                }
                 game_over = true;
             }
             for square in &mut squares {
@@ -117,6 +128,8 @@ async fn main() {
                     if bullet.collides_with(square) {
                         bullet.collided = true;
                         square.collided = true;
+                        score += square.size.round() as u32;
+                        highscore = highscore.max(score);
                     }
                 }
             }
@@ -128,6 +141,7 @@ async fn main() {
             circle.x = screen_width() / 2.0;
             circle.y = screen_height() / 2.0;
             game_over = false;
+            score = 0;
         }
 
         for square in &squares {
@@ -140,9 +154,20 @@ async fn main() {
             );
         }
         for bullet in &bullets {
-            draw_circle(bullet.x, bullet.y, bullet.size / 2.0, bullet.color);
+            draw_circle_lines(bullet.x, bullet.y, bullet.size / 2.0, 1.0, bullet.color);
         }
         draw_circle(circle.x, circle.y, circle.size / 2.0, circle.color);
+
+        draw_text(format!("Score: {}", score), 10.0, 35.0, 25.0, WHITE);
+        let highscore_text = format!("High score: {}", highscore);
+        let text_dimensions = measure_text(highscore_text.as_str(), None, 25, 1.0);
+        draw_text(
+            highscore_text.as_str(),
+            screen_width() - text_dimensions.width - 10.0,
+            35.0,
+            25.0,
+            WHITE,
+        );
 
         if game_over {
             let text = "GAME OVER!";
