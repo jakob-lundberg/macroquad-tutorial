@@ -1,6 +1,24 @@
 use macroquad::{prelude::*, rand::ChooseRandom};
 use std::fs;
 
+const FRAGMENT_SHADER: &str = include_str!("starfield-shader.glsl");
+
+const VERTEX_SHADER: &str = "#version 100
+attribute vec3 position;
+attribute vec2 texcoord;
+attribute vec4 color0;
+varying float iTime;
+
+uniform mat4 Model;
+uniform mat4 Projection;
+uniform vec4 _Time;
+
+void main() {
+    gl_Position = Projection * Model * vec4(position, 1);
+    iTime = _Time.x;
+}
+";
+
 enum GameState {
     MainMenu,
     Playing,
@@ -17,6 +35,10 @@ struct Game {
     last_fired: f64,
     score: u32,
     highscore: u32,
+
+    direction_modifier: f32,
+    render_target: RenderTarget,
+    material: Material,
 }
 
 struct Shape {
@@ -53,7 +75,7 @@ impl Shape {
 #[macroquad::main("My Game")]
 async fn main() {
     const MOVEMENT_SPEED: f32 = 200.0;
-    let colors = vec![GREEN, PINK, GRAY, PURPLE, BLACK];
+    let colors = vec![GREEN, PINK, GRAY, PURPLE];
 
     rand::srand(miniquad::date::now() as u64);
 
@@ -75,11 +97,28 @@ async fn main() {
         highscore: fs::read_to_string("highscore.dat")
             .map_or(Ok(0), |i| i.parse::<u32>())
             .unwrap_or(0),
+        direction_modifier: 0.0,
+        render_target: render_target(320, 150),
+        material: load_material(
+            ShaderSource::Glsl {
+                vertex: VERTEX_SHADER,
+                fragment: FRAGMENT_SHADER,
+            },
+            MaterialParams {
+                uniforms: vec![
+                    UniformDesc::new("iResolution", UniformType::Float2),
+                    UniformDesc::new("direction_modifier", UniformType::Float1),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap(),
     };
+    game.render_target.texture.set_filter(FilterMode::Nearest);
 
     loop {
         let delta_time = get_frame_time();
-        clear_background(BROWN);
+        draw_background(&game);
         match game.game_state {
             GameState::MainMenu => {
                 if is_key_pressed(KeyCode::Escape) {
@@ -117,9 +156,11 @@ async fn main() {
             GameState::Playing => {
                 if is_key_down(KeyCode::F) {
                     game.circle.x += MOVEMENT_SPEED * delta_time;
+                    game.direction_modifier += 0.05 * delta_time;
                 }
                 if is_key_down(KeyCode::S) {
                     game.circle.x -= MOVEMENT_SPEED * delta_time;
+                    game.direction_modifier -= 0.05 * delta_time;
                 }
                 if is_key_down(KeyCode::D) {
                     game.circle.y += MOVEMENT_SPEED * delta_time;
@@ -141,7 +182,7 @@ async fn main() {
                         speed: game.circle.speed * 2.0,
                         x: game.circle.x,
                         y: game.circle.y,
-                        color: BLACK,
+                        color: RED,
                         collided: false,
                     });
 
@@ -239,6 +280,26 @@ async fn main() {
 
         next_frame().await;
     }
+}
+
+fn draw_background(game: &Game) -> () {
+    clear_background(BROWN);
+    game.material
+        .set_uniform("iResolution", (screen_width(), screen_height()));
+    game.material
+        .set_uniform("direction_modifier", game.direction_modifier);
+    gl_use_material(&game.material);
+    draw_texture_ex(
+        &game.render_target.texture,
+        0.,
+        0.,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(screen_width(), screen_height())),
+            ..Default::default()
+        },
+    );
+    gl_use_default_material();
 }
 
 fn draw_playing_field(game: &Game) -> () {
