@@ -1,4 +1,5 @@
 use macroquad::{prelude::*, rand::ChooseRandom};
+use macroquad_particles::{self as particles, ColorCurve, Emitter, EmitterConfig};
 use std::fs;
 
 const FRAGMENT_SHADER: &str = include_str!("starfield-shader.glsl");
@@ -32,6 +33,8 @@ struct Game {
     circle: Shape,
     squares: Vec<Shape>,
     bullets: Vec<Shape>,
+    explosions: Vec<(Emitter, Vec2)>,
+
     last_fired: f64,
     score: u32,
     highscore: u32,
@@ -92,6 +95,7 @@ async fn main() {
         },
         squares: vec![],
         bullets: vec![],
+        explosions: vec![],
         last_fired: 0.0,
         score: 0,
         highscore: fs::read_to_string("highscore.dat")
@@ -127,6 +131,7 @@ async fn main() {
                 if is_key_pressed(KeyCode::Space) {
                     game.squares.clear();
                     game.bullets.clear();
+                    game.explosions.clear();
                     game.circle.x = screen_width() / 2.0;
                     game.circle.y = screen_height() / 2.0;
                     game.score = 0;
@@ -217,6 +222,8 @@ async fn main() {
 
                 game.squares.retain(|square| !square.collided);
                 game.bullets.retain(|bullet| !bullet.collided);
+                game.explosions
+                    .retain(|(explosion, _)| explosion.config.emitting);
 
                 if game
                     .squares
@@ -235,17 +242,24 @@ async fn main() {
                             square.collided = true;
                             game.score += square.size.round() as u32;
                             game.highscore = game.highscore.max(game.score);
+                            game.explosions.push((
+                                Emitter::new(EmitterConfig {
+                                    amount: (square.size.round() as u32 * 1).max(30),
+                                    ..particle_explosion()
+                                }),
+                                vec2(square.x, square.y),
+                            ));
                         }
                     }
                 }
-                draw_playing_field(&game);
+                draw_playing_field(&mut game);
             }
             GameState::Paused => {
                 if is_key_pressed(KeyCode::Space) {
                     game.game_state = GameState::Playing;
                 }
 
-                draw_playing_field(&game);
+                draw_playing_field(&mut game);
                 let text = "Paused";
                 let text_dimensions = measure_text(text, None, 50, 1.0);
                 draw_text(
@@ -302,7 +316,7 @@ fn draw_background(game: &Game) -> () {
     gl_use_default_material();
 }
 
-fn draw_playing_field(game: &Game) -> () {
+fn draw_playing_field(game: &mut Game) -> () {
     for square in &game.squares {
         draw_rectangle(
             square.x - square.size / 2.0,
@@ -315,6 +329,11 @@ fn draw_playing_field(game: &Game) -> () {
     for bullet in &game.bullets {
         draw_circle_lines(bullet.x, bullet.y, bullet.size / 2.0, 1.0, bullet.color);
     }
+
+    for (explosion, coords) in game.explosions.iter_mut() {
+        explosion.draw(*coords);
+    }
+
     draw_circle(
         game.circle.x,
         game.circle.y,
@@ -332,4 +351,26 @@ fn draw_playing_field(game: &Game) -> () {
         25.0,
         WHITE,
     );
+}
+
+fn particle_explosion() -> particles::EmitterConfig {
+    particles::EmitterConfig {
+        local_coords: false,
+        one_shot: true,
+        emitting: true,
+        lifetime: 0.6,
+        lifetime_randomness: 0.3,
+        explosiveness: 0.65,
+        initial_direction_spread: 2.0 * std::f32::consts::PI,
+        initial_velocity: 300.0,
+        initial_velocity_randomness: 0.8,
+        size: 2.0,
+        size_randomness: 0.3,
+        colors_curve: ColorCurve {
+            start: RED,
+            mid: ORANGE,
+            end: RED,
+        },
+        ..Default::default()
+    }
 }
