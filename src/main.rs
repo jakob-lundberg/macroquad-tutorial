@@ -1,5 +1,5 @@
 use macroquad::experimental::animation::{AnimatedSprite, Animation};
-use macroquad::{prelude::*, rand::ChooseRandom};
+use macroquad::prelude::*;
 use macroquad_particles::{self as particles, AtlasConfig, Emitter, EmitterConfig};
 use std::fs;
 
@@ -54,9 +54,15 @@ struct Game {
     material: Material,
 
     ship_texture: Texture2D,
-    bullet_texture: Texture2D,
     ship_sprite: AnimatedSprite,
+    bullet_texture: Texture2D,
     bullet_sprite: AnimatedSprite,
+    enemy_small_texture: Texture2D,
+    enemy_small_sprite: AnimatedSprite,
+    enemy_medium_texture: Texture2D,
+    enemy_medium_sprite: AnimatedSprite,
+    enemy_large_texture: Texture2D,
+    enemy_large_sprite: AnimatedSprite,
 }
 
 struct Shape {
@@ -64,7 +70,6 @@ struct Shape {
     speed: f32,
     x: f32,
     y: f32,
-    color: Color,
     collided: bool,
 }
 
@@ -97,7 +102,6 @@ async fn main() {
     const LARGE_TURNING_TIME: f32 = 0.2;
     const FIRE_INTERVAL: f64 = 0.3;
 
-    let colors = vec![GREEN, PINK, GRAY, PURPLE];
     set_pc_assets_folder("assets");
 
     rand::srand(miniquad::date::now() as u64);
@@ -114,8 +118,58 @@ async fn main() {
         .expect("Couldn't load explosion");
     explosion_texture.set_filter(FilterMode::Nearest);
 
+    let enemy_small_texture: Texture2D = load_texture("enemy-small.png")
+        .await
+        .expect("Couldn't load small enemy");
+    enemy_small_texture.set_filter(FilterMode::Nearest);
+
+    let enemy_medium_texture: Texture2D = load_texture("enemy-medium.png")
+        .await
+        .expect("Couldn't load medium enemy");
+    enemy_medium_texture.set_filter(FilterMode::Nearest);
+
+    let enemy_large_texture: Texture2D = load_texture("enemy-big.png")
+        .await
+        .expect("Couldn't load large enemy");
+    enemy_large_texture.set_filter(FilterMode::Nearest);
+
     build_textures_atlas();
 
+    let enemy_small_sprite = AnimatedSprite::new(
+        17,
+        16,
+        &[Animation {
+            name: "enemy_small".to_string(),
+            row: 0,
+            frames: 2,
+            fps: 12,
+        }],
+        true,
+    );
+
+    let enemy_medium_sprite = AnimatedSprite::new(
+        32,
+        16,
+        &[Animation {
+            name: "enemy_medium".to_string(),
+            row: 0,
+            frames: 2,
+            fps: 12,
+        }],
+        true,
+    );
+
+    let enemy_large_sprite = AnimatedSprite::new(
+        32,
+        32,
+        &[Animation {
+            name: "enemy_large".to_string(),
+            row: 0,
+            frames: 2,
+            fps: 12,
+        }],
+        true,
+    );
     let mut bullet_sprite = AnimatedSprite::new(
         16,
         16,
@@ -182,7 +236,6 @@ async fn main() {
             speed: MOVEMENT_SPEED,
             x: screen_height() / 2.0,
             y: screen_width() / 2.0,
-            color: YELLOW,
             collided: false,
         },
         squares: vec![],
@@ -215,6 +268,12 @@ async fn main() {
         ship_texture: ship_texture,
         bullet_sprite: bullet_sprite,
         bullet_texture: bullet_texture,
+        enemy_small_texture: enemy_small_texture,
+        enemy_small_sprite: enemy_small_sprite,
+        enemy_medium_texture: enemy_medium_texture,
+        enemy_medium_sprite: enemy_medium_sprite,
+        enemy_large_texture: enemy_large_texture,
+        enemy_large_sprite: enemy_large_sprite,
     };
     game.render_target.texture.set_filter(FilterMode::Nearest);
 
@@ -310,7 +369,6 @@ async fn main() {
                         speed: game.circle.speed * 3.0,
                         x: game.circle.x,
                         y: game.circle.y - 24.0,
-                        color: RED,
                         collided: false,
                     });
 
@@ -319,13 +377,11 @@ async fn main() {
 
                 if rand::gen_range(0, 99) >= 95 {
                     let size = rand::gen_range(16.0, 64.0);
-                    let color = colors.choose().unwrap();
                     game.squares.push(Shape {
                         size: size,
                         speed: rand::gen_range(50.0, 150.0),
                         x: rand::gen_range(size / 2.0, screen_width() - size / 2.0),
                         y: -size,
-                        color: *color,
                         collided: false,
                     });
                 }
@@ -340,6 +396,9 @@ async fn main() {
 
                 game.ship_sprite.update();
                 game.bullet_sprite.update();
+                game.enemy_small_sprite.update();
+                game.enemy_medium_sprite.update();
+                game.enemy_large_sprite.update();
 
                 game.squares
                     .retain(|square| square.y < screen_height() + square.size);
@@ -444,13 +503,35 @@ fn draw_background(game: &Game) -> () {
 }
 
 fn draw_playing_field(game: &mut Game) -> () {
+    let enemy_small_frame = game.enemy_small_sprite.frame();
+    let enemy_medium_frame = game.enemy_medium_sprite.frame();
+    let enemy_large_frame = game.enemy_large_sprite.frame();
     for square in &game.squares {
-        draw_rectangle(
+        let texture = match square.size {
+            x if (..30.0).contains(&x) => &game.enemy_small_texture,
+            x if (30.0..50.0).contains(&x) => &game.enemy_medium_texture,
+            x if (50.0..).contains(&x) => &game.enemy_large_texture,
+            _ => &game.enemy_small_texture,
+        };
+        let source = match square.size {
+            x if (..30.0).contains(&x) => &enemy_small_frame,
+            x if (30.0..50.0).contains(&x) => &enemy_medium_frame,
+            x if (50.0..).contains(&x) => &enemy_large_frame,
+            _ => &enemy_small_frame,
+        };
+        draw_texture_ex(
+            texture,
             square.x - square.size / 2.0,
             square.y - square.size / 2.0,
-            square.size,
-            square.size,
-            square.color,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2 {
+                    x: square.size,
+                    y: square.size,
+                }),
+                source: Some(source.source_rect),
+                ..Default::default()
+            },
         );
     }
     let bullet_frame = game.bullet_sprite.frame();
