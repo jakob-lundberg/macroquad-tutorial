@@ -12,3 +12,7 @@ macroquad-particles = "0.2.2"
 [patch.crates-io]
 macroquad = { git = "https://github.com/not-fl3/macroquad" }
 macroquad-particles = { git = "https://github.com/not-fl3/macroquad" }
+
+
+[profile.dev.package.'*']
+opt-level = 3

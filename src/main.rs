@@ -1,3 +1,4 @@
+use macroquad::experimental::animation::{AnimatedSprite, Animation};
 use macroquad::{prelude::*, rand::ChooseRandom};
 use macroquad_particles::{self as particles, ColorCurve, Emitter, EmitterConfig};
 use std::fs;
@@ -27,6 +28,12 @@ enum GameState {
     GameOver,
 }
 
+enum Turning {
+    Not,
+    Left,
+    Right,
+}
+
 struct Game {
     game_state: GameState,
 
@@ -36,12 +43,20 @@ struct Game {
     explosions: Vec<(Emitter, Vec2)>,
 
     last_fired: f64,
+    turning: Turning,
+    turning_time: f32,
+
     score: u32,
     highscore: u32,
 
     direction_modifier: f32,
     render_target: RenderTarget,
     material: Material,
+
+    ship_texture: Texture2D,
+    bullet_texture: Texture2D,
+    ship_sprite: AnimatedSprite,
+    bullet_sprite: AnimatedSprite,
 }
 
 struct Shape {
@@ -78,9 +93,80 @@ impl Shape {
 #[macroquad::main("My Game")]
 async fn main() {
     const MOVEMENT_SPEED: f32 = 200.0;
+    const SCOLL_SPEED: f32 = 0.05;
+    const LARGE_TURNING_TIME: f32 = 0.2;
+    const FIRE_INTERVAL: f64 = 0.3;
+
     let colors = vec![GREEN, PINK, GRAY, PURPLE];
+    set_pc_assets_folder("assets");
 
     rand::srand(miniquad::date::now() as u64);
+
+    let ship_texture: Texture2D = load_texture("ship.png").await.expect("Couldn't load ship");
+    ship_texture.set_filter(FilterMode::Nearest);
+    let bullet_texture: Texture2D = load_texture("laser-bolts.png")
+        .await
+        .expect("Couldn't load bullet");
+    bullet_texture.set_filter(FilterMode::Nearest);
+    build_textures_atlas();
+
+    let mut bullet_sprite = AnimatedSprite::new(
+        16,
+        16,
+        &[
+            Animation {
+                name: "bullet".to_string(),
+                row: 0,
+                frames: 2,
+                fps: 12,
+            },
+            Animation {
+                name: "bolt".to_string(),
+                row: 1,
+                frames: 2,
+                fps: 12,
+            },
+        ],
+        true,
+    );
+    bullet_sprite.set_animation(1);
+    let ship_sprite = AnimatedSprite::new(
+        16,
+        24,
+        &[
+            Animation {
+                name: "idle".to_string(),
+                row: 0,
+                frames: 2,
+                fps: 12,
+            },
+            Animation {
+                name: "left_little".to_string(),
+                row: 1,
+                frames: 2,
+                fps: 12,
+            },
+            Animation {
+                name: "left".to_string(),
+                row: 2,
+                frames: 2,
+                fps: 12,
+            },
+            Animation {
+                name: "right_little".to_string(),
+                row: 3,
+                frames: 2,
+                fps: 12,
+            },
+            Animation {
+                name: "right".to_string(),
+                row: 4,
+                frames: 2,
+                fps: 12,
+            },
+        ],
+        true,
+    );
 
     let mut game = Game {
         game_state: GameState::MainMenu,
@@ -97,6 +183,8 @@ async fn main() {
         bullets: vec![],
         explosions: vec![],
         last_fired: 0.0,
+        turning: Turning::Not,
+        turning_time: 0.0,
         score: 0,
         highscore: fs::read_to_string("highscore.dat")
             .map_or(Ok(0), |i| i.parse::<u32>())
@@ -117,6 +205,10 @@ async fn main() {
             },
         )
         .unwrap(),
+        ship_sprite: ship_sprite,
+        ship_texture: ship_texture,
+        bullet_sprite: bullet_sprite,
+        bullet_texture: bullet_texture,
     };
     game.render_target.texture.set_filter(FilterMode::Nearest);
 
@@ -159,13 +251,38 @@ async fn main() {
                 );
             }
             GameState::Playing => {
+                game.ship_sprite.set_animation(0);
                 if is_key_down(KeyCode::F) {
                     game.circle.x += MOVEMENT_SPEED * delta_time;
-                    game.direction_modifier += 0.05 * delta_time;
-                }
-                if is_key_down(KeyCode::S) {
+                    game.direction_modifier += SCOLL_SPEED * delta_time;
+                    if let Turning::Right = game.turning {
+                        game.turning_time += delta_time;
+                    } else {
+                        game.turning_time = 0.0;
+                    }
+                    game.turning = Turning::Right;
+                    if game.turning_time > LARGE_TURNING_TIME {
+                        game.ship_sprite.set_animation(4);
+                    } else {
+                        game.ship_sprite.set_animation(3);
+                    }
+                } else if is_key_down(KeyCode::S) {
                     game.circle.x -= MOVEMENT_SPEED * delta_time;
-                    game.direction_modifier -= 0.05 * delta_time;
+                    game.direction_modifier -= SCOLL_SPEED * delta_time;
+                    if let Turning::Left = game.turning {
+                        game.turning_time += delta_time;
+                    } else {
+                        game.turning_time = 0.0;
+                    }
+                    game.turning = Turning::Left;
+                    if game.turning_time > LARGE_TURNING_TIME {
+                        game.ship_sprite.set_animation(2);
+                    } else {
+                        game.ship_sprite.set_animation(1);
+                    }
+                } else {
+                    game.turning = Turning::Not;
+                    game.turning_time = 0.0;
                 }
                 if is_key_down(KeyCode::D) {
                     game.circle.y += MOVEMENT_SPEED * delta_time;
@@ -181,12 +298,12 @@ async fn main() {
                 game.circle.x = clamp(game.circle.x, 0.0, screen_width());
                 game.circle.y = clamp(game.circle.y, 0.0, screen_height());
 
-                if is_key_down(KeyCode::Space) && get_time() - game.last_fired > 1.0 {
+                if is_key_down(KeyCode::Space) && get_time() - game.last_fired > FIRE_INTERVAL {
                     game.bullets.push(Shape {
-                        size: 5.0,
-                        speed: game.circle.speed * 2.0,
+                        size: 32.0,
+                        speed: game.circle.speed * 3.0,
                         x: game.circle.x,
-                        y: game.circle.y,
+                        y: game.circle.y - 24.0,
                         color: RED,
                         collided: false,
                     });
@@ -214,6 +331,9 @@ async fn main() {
                 for bullet in &mut game.bullets {
                     bullet.y -= bullet.speed * delta_time;
                 }
+
+                game.ship_sprite.update();
+                game.bullet_sprite.update();
 
                 game.squares
                     .retain(|square| square.y < screen_height() + square.size);
@@ -326,19 +446,39 @@ fn draw_playing_field(game: &mut Game) -> () {
             square.color,
         );
     }
+    let bullet_frame = game.bullet_sprite.frame();
     for bullet in &game.bullets {
-        draw_circle_lines(bullet.x, bullet.y, bullet.size / 2.0, 1.0, bullet.color);
+        draw_texture_ex(
+            &game.bullet_texture,
+            bullet.x - bullet.size / 2.0,
+            bullet.y - bullet.size / 2.0,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2 {
+                    x: bullet.size,
+                    y: bullet.size,
+                }),
+                source: Some(bullet_frame.source_rect),
+                ..Default::default()
+            },
+        );
     }
 
     for (explosion, coords) in game.explosions.iter_mut() {
         explosion.draw(*coords);
     }
 
-    draw_circle(
-        game.circle.x,
-        game.circle.y,
-        game.circle.size / 2.0,
-        game.circle.color,
+    let ship_frame = game.ship_sprite.frame();
+    draw_texture_ex(
+        &game.ship_texture,
+        game.circle.x - ship_frame.dest_size.x,
+        game.circle.y - ship_frame.dest_size.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(ship_frame.dest_size * 2.0),
+            source: Some(ship_frame.source_rect),
+            ..Default::default()
+        },
     );
 
     draw_text(format!("Score: {}", game.score), 10.0, 35.0, 25.0, WHITE);
