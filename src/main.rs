@@ -372,7 +372,7 @@ async fn main() {
                                 Emitter::new(EmitterConfig {
                                     amount: (square.size.round() as u32 * 1).max(30),
                                     texture: Some(explosion_texture.clone()),
-                                    ..particle_explosion()
+                                    ..particle_explosion(square.size)
                                 }),
                                 vec2(square.x, square.y),
                             ));
@@ -500,18 +500,18 @@ fn draw_playing_field(game: &mut Game) -> () {
     );
 }
 
-fn particle_explosion() -> particles::EmitterConfig {
+fn particle_explosion(size: f32) -> particles::EmitterConfig {
     particles::EmitterConfig {
         local_coords: false,
         one_shot: true,
         emitting: true,
-        lifetime: 0.6,
+        lifetime: 0.8 * size / 100.0,
         lifetime_randomness: 0.3,
-        explosiveness: 0.65,
+        explosiveness: 0.65 * size / 100.0,
         initial_direction_spread: 2.0 * std::f32::consts::PI,
         initial_velocity: 400.0,
         initial_velocity_randomness: 0.8,
-        size: 32.0,
+        size: 32.0 * size / 100.0,
         size_randomness: 0.3,
         atlas: Some(AtlasConfig::new(5, 1, 0..)),
         ..Default::default()
