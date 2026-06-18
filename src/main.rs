@@ -1,3 +1,4 @@
+use macroquad::audio::{PlaySoundParams, load_sound, play_sound, play_sound_once, stop_sound};
 use macroquad::experimental::animation::{AnimatedSprite, Animation};
 use macroquad::prelude::*;
 use macroquad_particles::{self as particles, AtlasConfig, Emitter, EmitterConfig};
@@ -135,6 +136,12 @@ async fn main() {
 
     build_textures_atlas();
 
+    let theme_music = load_sound("8bit-spaceshooter.ogg")
+        .await
+        .expect("Failed to load");
+    let sound_explosion = load_sound("explosion.wav").await.expect("Failed to load");
+    let sound_laser = load_sound("laser.wav").await.expect("Failed to load");
+
     let enemy_small_sprite = AnimatedSprite::new(
         17,
         16,
@@ -145,6 +152,14 @@ async fn main() {
             fps: 12,
         }],
         true,
+    );
+
+    play_sound(
+        &theme_music,
+        PlaySoundParams {
+            looped: true,
+            volume: 1.0,
+        },
     );
 
     let enemy_medium_sprite = AnimatedSprite::new(
@@ -358,6 +373,7 @@ async fn main() {
 
                 if is_key_pressed(KeyCode::P) {
                     game.game_state = GameState::Paused;
+                    stop_sound(&theme_music);
                 }
 
                 game.circle.x = clamp(game.circle.x, 0.0, screen_width());
@@ -371,6 +387,7 @@ async fn main() {
                         y: game.circle.y - 24.0,
                         collided: false,
                     });
+                    play_sound_once(&sound_laser);
 
                     game.last_fired = get_time();
                 }
@@ -435,6 +452,7 @@ async fn main() {
                                 }),
                                 vec2(square.x, square.y),
                             ));
+                            play_sound_once(&sound_explosion);
                         }
                     }
                 }
@@ -443,6 +461,14 @@ async fn main() {
             GameState::Paused => {
                 if is_key_pressed(KeyCode::Space) {
                     game.game_state = GameState::Playing;
+
+                    play_sound(
+                        &theme_music,
+                        PlaySoundParams {
+                            looped: true,
+                            volume: 1.0,
+                        },
+                    );
                 }
 
                 draw_playing_field(&mut game);
