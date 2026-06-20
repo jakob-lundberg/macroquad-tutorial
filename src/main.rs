@@ -2,6 +2,8 @@ use macroquad::audio::{
     PlaySoundParams, Sound, load_sound, play_sound, play_sound_once, stop_sound,
 };
 use macroquad::experimental::animation::{AnimatedSprite, Animation};
+use macroquad::experimental::collections::storage;
+use macroquad::experimental::coroutines::start_coroutine;
 use macroquad::prelude::*;
 use macroquad::ui::{Skin, hash, root_ui};
 use macroquad_particles::{self as particles, AtlasConfig, Emitter, EmitterConfig};
@@ -62,8 +64,6 @@ struct Game {
     enemy_small_sprite: AnimatedSprite,
     enemy_medium_sprite: AnimatedSprite,
     enemy_large_sprite: AnimatedSprite,
-
-    resources: Resources,
 }
 
 struct Resources {
@@ -214,11 +214,14 @@ async fn main() -> Result<(), macroquad::Error> {
 
     let window_size = vec2(370.0, 320.0);
 
-    let resouces = Resources::new().await.expect("Failed to load resouces");
+    load().await?;
+    let resources = storage::get::<Resources>();
 
-    root_ui().push_skin(&resouces.ui_skin);
+    // let resources = Resources::new().await.expect("Failed to load resouces");
+
+    root_ui().push_skin(&resources.ui_skin);
     play_sound(
-        &resouces.theme_music,
+        &resources.theme_music,
         PlaySoundParams {
             looped: true,
             volume: 1.0,
@@ -358,8 +361,6 @@ async fn main() -> Result<(), macroquad::Error> {
         enemy_small_sprite: enemy_small_sprite,
         enemy_medium_sprite: enemy_medium_sprite,
         enemy_large_sprite: enemy_large_sprite,
-
-        resources: resouces,
     };
     game.render_target.texture.set_filter(FilterMode::Nearest);
 
@@ -442,7 +443,7 @@ async fn main() -> Result<(), macroquad::Error> {
 
                 if is_key_pressed(KeyCode::P) {
                     game.game_state = GameState::Paused;
-                    stop_sound(&game.resources.theme_music);
+                    stop_sound(&resources.theme_music);
                 }
 
                 game.circle.x = clamp(game.circle.x, 0.0, screen_width());
@@ -456,7 +457,7 @@ async fn main() -> Result<(), macroquad::Error> {
                         y: game.circle.y - 24.0,
                         collided: false,
                     });
-                    play_sound_once(&game.resources.sound_laser);
+                    play_sound_once(&resources.sound_laser);
 
                     game.last_fired = get_time();
                 }
@@ -516,12 +517,12 @@ async fn main() -> Result<(), macroquad::Error> {
                             game.explosions.push((
                                 Emitter::new(EmitterConfig {
                                     amount: (square.size.round() as u32 * 1).max(30),
-                                    texture: Some(game.resources.explosion_texture.clone()),
+                                    texture: Some(resources.explosion_texture.clone()),
                                     ..particle_explosion(square.size)
                                 }),
                                 vec2(square.x, square.y),
                             ));
-                            play_sound_once(&game.resources.sound_explosion);
+                            play_sound_once(&resources.sound_explosion);
                         }
                     }
                 }
@@ -532,7 +533,7 @@ async fn main() -> Result<(), macroquad::Error> {
                     game.game_state = GameState::Playing;
 
                     play_sound(
-                        &game.resources.theme_music,
+                        &resources.theme_music,
                         PlaySoundParams {
                             looped: true,
                             volume: 1.0,
@@ -598,15 +599,17 @@ fn draw_background(game: &Game) -> () {
 }
 
 fn draw_playing_field(game: &mut Game) -> () {
+    let resources = storage::get::<Resources>();
+
     let enemy_small_frame = game.enemy_small_sprite.frame();
     let enemy_medium_frame = game.enemy_medium_sprite.frame();
     let enemy_large_frame = game.enemy_large_sprite.frame();
     for square in &game.squares {
         let texture = match square.size {
-            x if (..30.0).contains(&x) => &game.resources.enemy_small_texture,
-            x if (30.0..50.0).contains(&x) => &game.resources.enemy_medium_texture,
-            x if (50.0..).contains(&x) => &game.resources.enemy_large_texture,
-            _ => &game.resources.enemy_small_texture,
+            x if (..30.0).contains(&x) => &resources.enemy_small_texture,
+            x if (30.0..50.0).contains(&x) => &resources.enemy_medium_texture,
+            x if (50.0..).contains(&x) => &resources.enemy_large_texture,
+            _ => &resources.enemy_small_texture,
         };
         let source = match square.size {
             x if (..30.0).contains(&x) => &enemy_small_frame,
@@ -632,7 +635,7 @@ fn draw_playing_field(game: &mut Game) -> () {
     let bullet_frame = game.bullet_sprite.frame();
     for bullet in &game.bullets {
         draw_texture_ex(
-            &game.resources.bullet_texture,
+            &resources.bullet_texture,
             bullet.x - bullet.size / 2.0,
             bullet.y - bullet.size / 2.0,
             WHITE,
@@ -653,7 +656,7 @@ fn draw_playing_field(game: &mut Game) -> () {
 
     let ship_frame = game.ship_sprite.frame();
     draw_texture_ex(
-        &game.resources.ship_texture,
+        &resources.ship_texture,
         game.circle.x - ship_frame.dest_size.x,
         game.circle.y - ship_frame.dest_size.y,
         WHITE,
@@ -692,4 +695,27 @@ fn particle_explosion(size: f32) -> particles::EmitterConfig {
         atlas: Some(AtlasConfig::new(5, 1, 0..)),
         ..Default::default()
     }
+}
+
+pub async fn load() -> Result<(), macroquad::Error> {
+    let resources_loading = start_coroutine(async move {
+        let resources = Resources::new().await.unwrap();
+        storage::store(resources);
+    });
+    while !resources_loading.is_done() {
+        clear_background(BLACK);
+        let text = format!(
+            "Loading resources {}",
+            ".".repeat(((get_time() * 2.) as usize) % 4)
+        );
+        draw_text(
+            &text,
+            screen_width() / 2.0 - 160.0,
+            screen_height() / 2.0,
+            40.,
+            WHITE,
+        );
+        next_frame().await;
+    }
+    Ok(())
 }
