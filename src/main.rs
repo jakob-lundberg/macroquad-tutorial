@@ -1,4 +1,6 @@
-use macroquad::audio::{PlaySoundParams, load_sound, play_sound, play_sound_once, stop_sound};
+use macroquad::audio::{
+    PlaySoundParams, Sound, load_sound, play_sound, play_sound_once, stop_sound,
+};
 use macroquad::experimental::animation::{AnimatedSprite, Animation};
 use macroquad::prelude::*;
 use macroquad::ui::{Skin, hash, root_ui};
@@ -55,16 +57,118 @@ struct Game {
     render_target: RenderTarget,
     material: Material,
 
-    ship_texture: Texture2D,
     ship_sprite: AnimatedSprite,
-    bullet_texture: Texture2D,
     bullet_sprite: AnimatedSprite,
-    enemy_small_texture: Texture2D,
     enemy_small_sprite: AnimatedSprite,
-    enemy_medium_texture: Texture2D,
     enemy_medium_sprite: AnimatedSprite,
-    enemy_large_texture: Texture2D,
     enemy_large_sprite: AnimatedSprite,
+
+    resources: Resources,
+}
+
+struct Resources {
+    ship_texture: Texture2D,
+    bullet_texture: Texture2D,
+    enemy_small_texture: Texture2D,
+    enemy_medium_texture: Texture2D,
+    enemy_large_texture: Texture2D,
+    explosion_texture: Texture2D,
+
+    theme_music: Sound,
+    sound_explosion: Sound,
+    sound_laser: Sound,
+    ui_skin: Skin,
+}
+
+impl Resources {
+    async fn new() -> Result<Resources, macroquad::Error> {
+        let ship_texture: Texture2D = load_texture("ship.png").await?;
+        ship_texture.set_filter(FilterMode::Nearest);
+        let bullet_texture: Texture2D = load_texture("laser-bolts.png")
+            .await
+            .expect("Couldn't load bullet");
+        bullet_texture.set_filter(FilterMode::Nearest);
+
+        let explosion_texture: Texture2D = load_texture("explosion.png")
+            .await
+            .expect("Couldn't load explosion");
+        explosion_texture.set_filter(FilterMode::Nearest);
+
+        let enemy_small_texture: Texture2D = load_texture("enemy-small.png")
+            .await
+            .expect("Couldn't load small enemy");
+        enemy_small_texture.set_filter(FilterMode::Nearest);
+
+        let enemy_medium_texture: Texture2D = load_texture("enemy-medium.png")
+            .await
+            .expect("Couldn't load medium enemy");
+        enemy_medium_texture.set_filter(FilterMode::Nearest);
+
+        let enemy_large_texture: Texture2D = load_texture("enemy-big.png")
+            .await
+            .expect("Couldn't load large enemy");
+        enemy_large_texture.set_filter(FilterMode::Nearest);
+
+        build_textures_atlas();
+
+        let theme_music = load_sound("8bit-spaceshooter.ogg")
+            .await
+            .expect("Failed to load");
+        let sound_explosion = load_sound("explosion.wav").await.expect("Failed to load");
+        let sound_laser = load_sound("laser.wav").await.expect("Failed to load");
+
+        let window_background = load_image("window_background.png")
+            .await
+            .expect("Failed to load");
+        let button_background = load_image("button_background.png")
+            .await
+            .expect("Failed to load");
+        let button_clicked_background = load_image("button_clicked_background.png")
+            .await
+            .expect("Failed to load");
+        let font = load_file("atari_games.ttf").await.expect("Failed to load");
+
+        let window_style = root_ui()
+            .style_builder()
+            .background(window_background)
+            .background_margin(RectOffset::new(32.0, 76.0, 44.0, 20.0))
+            .margin(RectOffset::new(0.0, -40.0, 0.0, 0.0))
+            .build();
+        let button_style = root_ui()
+            .style_builder()
+            .background(button_background)
+            .background_clicked(button_clicked_background)
+            .background_margin(RectOffset::new(16.0, 16.0, 16.0, 16.0))
+            .margin(RectOffset::new(16.0, 0.0, -8.0, -8.0))
+            .font(&font)?
+            .text_color(WHITE)
+            .font_size(64)
+            .build();
+        let label_style = root_ui()
+            .style_builder()
+            .font(&font)?
+            .text_color(WHITE)
+            .font_size(28)
+            .build();
+        let ui_skin = Skin {
+            window_style,
+            button_style,
+            label_style,
+            ..root_ui().default_skin()
+        };
+        Ok(Resources {
+            ship_texture,
+            bullet_texture,
+            enemy_small_texture,
+            enemy_medium_texture,
+            enemy_large_texture,
+            explosion_texture,
+            theme_music,
+            sound_explosion,
+            sound_laser,
+            ui_skin,
+        })
+    }
 }
 
 struct Shape {
@@ -98,7 +202,7 @@ impl Shape {
 }
 
 #[macroquad::main("My Game")]
-async fn main() {
+async fn main() -> Result<(), macroquad::Error> {
     const MOVEMENT_SPEED: f32 = 200.0;
     const SCOLL_SPEED: f32 = 0.05;
     const LARGE_TURNING_TIME: f32 = 0.2;
@@ -108,84 +212,18 @@ async fn main() {
 
     rand::srand(miniquad::date::now() as u64);
 
-    let ship_texture: Texture2D = load_texture("ship.png").await.expect("Couldn't load ship");
-    ship_texture.set_filter(FilterMode::Nearest);
-    let bullet_texture: Texture2D = load_texture("laser-bolts.png")
-        .await
-        .expect("Couldn't load bullet");
-    bullet_texture.set_filter(FilterMode::Nearest);
-
-    let explosion_texture: Texture2D = load_texture("explosion.png")
-        .await
-        .expect("Couldn't load explosion");
-    explosion_texture.set_filter(FilterMode::Nearest);
-
-    let enemy_small_texture: Texture2D = load_texture("enemy-small.png")
-        .await
-        .expect("Couldn't load small enemy");
-    enemy_small_texture.set_filter(FilterMode::Nearest);
-
-    let enemy_medium_texture: Texture2D = load_texture("enemy-medium.png")
-        .await
-        .expect("Couldn't load medium enemy");
-    enemy_medium_texture.set_filter(FilterMode::Nearest);
-
-    let enemy_large_texture: Texture2D = load_texture("enemy-big.png")
-        .await
-        .expect("Couldn't load large enemy");
-    enemy_large_texture.set_filter(FilterMode::Nearest);
-
-    build_textures_atlas();
-
-    let theme_music = load_sound("8bit-spaceshooter.ogg")
-        .await
-        .expect("Failed to load");
-    let sound_explosion = load_sound("explosion.wav").await.expect("Failed to load");
-    let sound_laser = load_sound("laser.wav").await.expect("Failed to load");
-
-    let window_background = load_image("window_background.png")
-        .await
-        .expect("Failed to load");
-    let button_background = load_image("button_background.png")
-        .await
-        .expect("Failed to load");
-    let button_clicked_background = load_image("button_clicked_background.png")
-        .await
-        .expect("Failed to load");
-    let font = load_file("atari_games.ttf").await.expect("Failed to load");
-
-    let window_style = root_ui()
-        .style_builder()
-        .background(window_background)
-        .background_margin(RectOffset::new(32.0, 76.0, 44.0, 20.0))
-        .margin(RectOffset::new(0.0, -40.0, 0.0, 0.0))
-        .build();
-    let button_style = root_ui()
-        .style_builder()
-        .background(button_background)
-        .background_clicked(button_clicked_background)
-        .background_margin(RectOffset::new(16.0, 16.0, 16.0, 16.0))
-        .margin(RectOffset::new(16.0, 0.0, -8.0, -8.0))
-        .font(&font)
-        .unwrap()
-        .text_color(WHITE)
-        .font_size(64)
-        .build();
-    let label_style = root_ui()
-        .style_builder()
-        .font(&font)
-        .unwrap()
-        .text_color(WHITE)
-        .font_size(28)
-        .build();
-    let ui_skin = Skin {
-        window_style,
-        button_style,
-        label_style,
-        ..root_ui().default_skin()
-    };
-    root_ui().push_skin(&ui_skin);
     let window_size = vec2(370.0, 320.0);
+
+    let resouces = Resources::new().await.expect("Failed to load resouces");
+
+    root_ui().push_skin(&resouces.ui_skin);
+    play_sound(
+        &resouces.theme_music,
+        PlaySoundParams {
+            looped: true,
+            volume: 1.0,
+        },
+    );
 
     let enemy_small_sprite = AnimatedSprite::new(
         17,
@@ -197,14 +235,6 @@ async fn main() {
             fps: 12,
         }],
         true,
-    );
-
-    play_sound(
-        &theme_music,
-        PlaySoundParams {
-            looped: true,
-            volume: 1.0,
-        },
     );
 
     let enemy_medium_sprite = AnimatedSprite::new(
@@ -322,18 +352,14 @@ async fn main() {
                 ],
                 ..Default::default()
             },
-        )
-        .unwrap(),
+        )?,
         ship_sprite: ship_sprite,
-        ship_texture: ship_texture,
         bullet_sprite: bullet_sprite,
-        bullet_texture: bullet_texture,
-        enemy_small_texture: enemy_small_texture,
         enemy_small_sprite: enemy_small_sprite,
-        enemy_medium_texture: enemy_medium_texture,
         enemy_medium_sprite: enemy_medium_sprite,
-        enemy_large_texture: enemy_large_texture,
         enemy_large_sprite: enemy_large_sprite,
+
+        resources: resouces,
     };
     game.render_target.texture.set_filter(FilterMode::Nearest);
 
@@ -357,7 +383,6 @@ async fn main() {
                     vec2(screen_width(), screen_height() - window_size.y / 2.0),
                     window_size,
                     |ui| {
-                        let (mouse_x, mouse_y) = mouse_position();
                         ui.label(vec2(80.0, -32.0), "Main Menu");
                         if ui.button(vec2(65.0, 25.0), "Play") {
                             game.squares.clear();
@@ -417,7 +442,7 @@ async fn main() {
 
                 if is_key_pressed(KeyCode::P) {
                     game.game_state = GameState::Paused;
-                    stop_sound(&theme_music);
+                    stop_sound(&game.resources.theme_music);
                 }
 
                 game.circle.x = clamp(game.circle.x, 0.0, screen_width());
@@ -431,7 +456,7 @@ async fn main() {
                         y: game.circle.y - 24.0,
                         collided: false,
                     });
-                    play_sound_once(&sound_laser);
+                    play_sound_once(&game.resources.sound_laser);
 
                     game.last_fired = get_time();
                 }
@@ -491,12 +516,12 @@ async fn main() {
                             game.explosions.push((
                                 Emitter::new(EmitterConfig {
                                     amount: (square.size.round() as u32 * 1).max(30),
-                                    texture: Some(explosion_texture.clone()),
+                                    texture: Some(game.resources.explosion_texture.clone()),
                                     ..particle_explosion(square.size)
                                 }),
                                 vec2(square.x, square.y),
                             ));
-                            play_sound_once(&sound_explosion);
+                            play_sound_once(&game.resources.sound_explosion);
                         }
                     }
                 }
@@ -507,7 +532,7 @@ async fn main() {
                     game.game_state = GameState::Playing;
 
                     play_sound(
-                        &theme_music,
+                        &game.resources.theme_music,
                         PlaySoundParams {
                             looped: true,
                             volume: 1.0,
@@ -578,10 +603,10 @@ fn draw_playing_field(game: &mut Game) -> () {
     let enemy_large_frame = game.enemy_large_sprite.frame();
     for square in &game.squares {
         let texture = match square.size {
-            x if (..30.0).contains(&x) => &game.enemy_small_texture,
-            x if (30.0..50.0).contains(&x) => &game.enemy_medium_texture,
-            x if (50.0..).contains(&x) => &game.enemy_large_texture,
-            _ => &game.enemy_small_texture,
+            x if (..30.0).contains(&x) => &game.resources.enemy_small_texture,
+            x if (30.0..50.0).contains(&x) => &game.resources.enemy_medium_texture,
+            x if (50.0..).contains(&x) => &game.resources.enemy_large_texture,
+            _ => &game.resources.enemy_small_texture,
         };
         let source = match square.size {
             x if (..30.0).contains(&x) => &enemy_small_frame,
@@ -607,7 +632,7 @@ fn draw_playing_field(game: &mut Game) -> () {
     let bullet_frame = game.bullet_sprite.frame();
     for bullet in &game.bullets {
         draw_texture_ex(
-            &game.bullet_texture,
+            &game.resources.bullet_texture,
             bullet.x - bullet.size / 2.0,
             bullet.y - bullet.size / 2.0,
             WHITE,
@@ -628,7 +653,7 @@ fn draw_playing_field(game: &mut Game) -> () {
 
     let ship_frame = game.ship_sprite.frame();
     draw_texture_ex(
-        &game.ship_texture,
+        &game.resources.ship_texture,
         game.circle.x - ship_frame.dest_size.x,
         game.circle.y - ship_frame.dest_size.y,
         WHITE,
